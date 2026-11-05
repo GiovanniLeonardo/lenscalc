@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>LensCalc v2— Camera & Screen OCR Calculator</title>
+  <title>LensCalc — Camera & Screen OCR Calculator</title>
 
   <!-- PWA & Mobile Meta tags -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -44,6 +44,10 @@
 
   <!-- Phosphor Icons for sleek modern UI -->
   <script src="https://unpkg.com/@phosphor-icons/web@2.0.3"></script>
+
+  <!-- Cropper.js for tap-and-drag bounding box / crop on captured screens -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.js"></script>
 
   <!-- Tesseract.js (Client-side in-browser OCR) -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -101,7 +105,7 @@
           LensCalc
           <span class="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/30">Auto OCR</span>
         </h1>
-        <p class="text-[11px] text-slate-400 mt-0.5">Screen & Document Sum</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Screen & Document Sum V2</p>
       </div>
     </div>
     
@@ -191,22 +195,22 @@
       <div class="flex items-baseline justify-between mt-1 mb-4 flex-wrap gap-2">
         <div class="flex items-baseline gap-1">
           <span class="text-slate-400 font-mono text-2xl font-light">$</span>
-          <h2 id="grandTotal" class="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight text-white drop-shadow">
-            0.00
-          </h2>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <button id="copyTotalBtn" class="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-slate-700 active:scale-95 border border-white/10 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition">
-            <i class="ph ph-copy"></i>
-            <span>Copy</span>
-          </button>
-          <button id="resetBtn" class="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-rose-950/60 hover:text-rose-400 active:scale-95 border border-white/10 text-slate-400 text-xs font-medium flex items-center gap-1 transition" title="Clear All">
-            <i class="ph ph-trash"></i>
-          </button>
-        </div>
+        <h2 id="grandTotal" class="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight text-white drop-shadow">
+          0.00
+        </h2>
       </div>
+      <div class="flex items-center gap-1.5">
+        <button id="copyTotalBtn" class="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-slate-700 active:scale-95 border border-white/10 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition">
+          <i class="ph ph-copy"></i>
+          <span>Copy</span>
+        </button>
+        <button id="resetBtn" class="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-rose-950/60 hover:text-rose-400 active:scale-95 border border-white/10 text-slate-400 text-xs font-medium flex items-center gap-1 transition" title="Clear All">
+          <i class="ph ph-trash"></i>
+        </button>
+      </div>
+    </div>
 
-      <!-- Quick Metrics Grid -->
+    <!-- Quick Metrics Grid -->
       <div class="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-center font-mono">
         <div class="bg-surface-900/60 rounded-xl p-2 border border-white/5">
           <p class="text-[10px] uppercase tracking-wider text-slate-400 font-sans">Average</p>
@@ -240,22 +244,22 @@
     <div id="previewContainer" class="hidden glass-card rounded-2xl p-3 border border-white/10 overflow-hidden">
       <div class="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-xs text-slate-400">
         <span class="flex items-center gap-1.5 text-slate-300 font-medium">
-          <i class="ph ph-image text-brand-400"></i> Captured Image Preview
+          <i class="ph ph-crop text-brand-400"></i> Crop / Scan Area (Focus on numbers)
         </span>
         <div class="flex items-center gap-2">
-          <button id="toggleCropHelp" class="text-[11px] text-slate-400 hover:text-white flex items-center gap-1">
-            <i class="ph ph-info"></i> Tip
+          <button id="cropAndScanBtn" class="px-2.5 py-1 rounded-lg bg-brand-500 text-surface-950 font-bold hover:bg-brand-400 transition flex items-center gap-1 text-[11px]">
+            <i class="ph-bold ph-check"></i> Re-Scan Selection
           </button>
           <button id="dismissPreview" class="text-slate-400 hover:text-white">
             <i class="ph ph-x"></i>
           </button>
         </div>
       </div>
-      <div class="relative max-h-48 overflow-auto rounded-xl border border-white/5 bg-black/60 flex items-center justify-center">
-        <img id="imagePreview" class="w-full h-auto object-contain rounded-lg" alt="Captured screen preview">
+      <div class="relative max-h-64 overflow-hidden rounded-xl border border-white/5 bg-black/60 flex items-center justify-center">
+        <img id="imagePreview" class="max-w-full max-h-64 object-contain rounded-lg" alt="Captured screen preview">
       </div>
-      <p id="cropTip" class="hidden text-[11px] text-slate-400 mt-2 bg-surface-900/80 p-2 rounded-lg border border-white/5">
-        💡 <strong>Pro Tip:</strong> Hold phone steady perpendicular to screen to avoid moiré monitor lines, or take a direct clean screenshot on your computer and upload it.
+      <p class="text-[11px] text-slate-400 mt-2 bg-surface-900/80 p-2 rounded-lg border border-white/5 flex items-center justify-between">
+        <span>💡 Drag box around just the number column to eliminate outer table borders.</span>
       </p>
     </div>
 
@@ -411,7 +415,9 @@
       history: JSON.parse(localStorage.getItem('lenscalc_history') || '[]'),
       isProcessing: false,
       mediaStream: null,
-      currentFacingMode: 'environment'
+      currentFacingMode: 'environment',
+      cropper: null,
+      rawImageSrc: null
     };
 
     // DOM Elements
@@ -440,6 +446,7 @@
     const dismissPreview = document.getElementById('dismissPreview');
     const toggleCropHelp = document.getElementById('toggleCropHelp');
     const cropTip = document.getElementById('cropTip');
+    const cropAndScanBtn = document.getElementById('cropAndScanBtn');
     const historyModal = document.getElementById('historyModal');
     const openHistoryBtn = document.getElementById('openHistoryBtn');
     const closeHistoryBtn = document.getElementById('closeHistoryBtn');
@@ -601,131 +608,133 @@
     }
 
     /**
-     * Enhanced Number Parsing Engine:
-     * Fixes calculation issues for numbers with commas like '209,229', '209,729', '210,229', '245,729'.
-     * Correctly handles thousand separators, decimals, currency symbols, and negatives.
+     * Advanced Monitor & Spreadsheet Grid-Line Removal Preprocessing:
+     * 1. Upscales small text for crisp edges.
+     * 2. Converts to grayscale with Otsu adaptive thresholding.
+     * 3. Erases thin continuous vertical & horizontal Excel table lines (which Tesseract mistakes for '1' or '7').
      */
-    function extractNumbersFromText(ocrText) {
-      const extracted = [];
-      if (!ocrText) return extracted;
-
-      // Normalize common OCR misreads in numeric contexts
-      let sanitizedText = ocrText
-        .replace(/[$€£¥]/g, ' ')
-        // Normalize minus signs (dash, em-dash, en-dash, minus symbol)
-        .replace(/[−—–]/g, '-');
-
-      const lines = sanitizedText.split(/\r?\n/);
-
-      /**
-       * Robust number pattern:
-       * Matches:
-       * 1. Comma grouped numbers with or without decimals: 209,229 or 1,234,567.89
-       * 2. Standard decimal / integer numbers: 209229 or 123.45
-       * 3. Negative values with leading minus or parentheses: -209,229 or (209,229)
-       */
-      const numberRegex = /(^|[^\d.,])([(-]?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?|[(-]?\s*\d+(?:\.\d+)?\)?)(?=[^\d.,]|$)/g;
-
-      lines.forEach(line => {
-        let match;
-        while ((match = numberRegex.exec(line)) !== null) {
-          let token = match[2].trim();
-          if (!token) continue;
-
-          // Detect negative sign or accounting parentheses: (209,229) -> -209229
-          const isNegative = token.includes('(') || token.startsWith('-');
-
-          // Strip non-numeric formatting characters except decimal points
-          let cleanDigits = token.replace(/[(),\s-]/g, '');
-
-          // Verify string has at least one valid digit
-          if (!/\d/.test(cleanDigits)) continue;
-
-          let numericValue = parseFloat(cleanDigits);
-          if (isNegative) numericValue = -Math.abs(numericValue);
-
-          if (!isNaN(numericValue)) {
-            extracted.push({
-              id: 'num_' + Math.random().toString(36).substr(2, 9),
-              value: numericValue,
-              originalText: token,
-              included: true
-            });
-          }
-        }
-      });
-
-      return extracted;
-    }
-
-    // Preprocessing on Offscreen Canvas for optimal Screen/Monitor text extraction
     function preprocessImage(imgElement) {
       const canvas = offscreenCanvas;
       const ctx = canvas.getContext('2d');
 
-      const maxDim = 1800;
       let width = imgElement.naturalWidth || imgElement.videoWidth || imgElement.width;
       let height = imgElement.naturalHeight || imgElement.videoHeight || imgElement.height;
 
-      // Scale down if massive to keep OCR speedy on mobile
-      if (width > maxDim || height > maxDim) {
-        if (width > height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-      }
+      // Upscale if text is tiny, or clamp if excessively huge
+      const scale = Math.max(1.5, Math.min(2.5, 1600 / Math.max(width, height)));
+      const targetW = Math.round(width * scale);
+      const targetH = Math.round(height * scale);
 
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = targetW;
+      canvas.height = targetH;
 
-      const doGrayscale = document.getElementById('optGrayscale').checked;
-      const doHighContrast = document.getElementById('optHighContrast').checked;
-      const doDescreen = document.getElementById('optDescreen')?.checked ?? true;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(imgElement, 0, 0, targetW, targetH);
 
-      // Apply initial canvas filters (helps remove LCD pixel mesh)
-      if (doDescreen) {
-        ctx.filter = 'blur(0.4px)';
-      }
-      ctx.drawImage(imgElement, 0, 0, width, height);
-      ctx.filter = 'none';
-
-      if (!doGrayscale && !doHighContrast) {
-        return canvas.toDataURL('image/png');
-      }
-
-      const imgData = ctx.getImageData(0, 0, width, height);
+      const imgData = ctx.getImageData(0, 0, targetW, targetH);
       const d = imgData.data;
+      const totalPixels = targetW * targetH;
 
-      // Contrast factor
-      const contrast = 55; // boost for screen text
-      const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+      // 1. Convert to Grayscale & compute luminance histogram
+      const gray = new Uint8Array(totalPixels);
+      const histogram = new Array(256).fill(0);
 
-      for (let i = 0; i < d.length; i += 4) {
-        let r = d[i];
-        let g = d[i + 1];
-        let b = d[i + 2];
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        const val = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+        gray[j] = val;
+        histogram[val]++;
+      }
 
-        // 1. Grayscale (Luminance)
-        if (doGrayscale) {
-          let gray = 0.299 * r + 0.587 * g + 0.114 * b;
-          r = gray;
-          g = gray;
-          b = gray;
+      // 2. Otsu's Global Adaptive Binarization
+      let sumAll = 0;
+      for (let t = 0; t < 256; t++) sumAll += t * histogram[t];
+
+      let sumB = 0;
+      let wB = 0;
+      let varMax = 0;
+      let threshold = 140;
+
+      for (let t = 0; t < 256; t++) {
+        wB += histogram[t];
+        if (wB === 0) continue;
+        const wF = totalPixels - wB;
+        if (wF === 0) break;
+
+        sumB += t * histogram[t];
+        const mB = sumB / wB;
+        const mF = (sumAll - sumB) / wF;
+        const varBetween = wB * wF * (mB - mF) * (mB - mF);
+
+        if (varBetween > varMax) {
+          varMax = varBetween;
+          threshold = t;
         }
+      }
 
-        // 2. Contrast adjustment
-        if (doHighContrast) {
-          r = factor * (r - 128) + 128;
-          g = factor * (g - 128) + 128;
-          b = factor * (b - 128) + 128;
+      // Slightly bias threshold towards white to avoid picking up grey Excel grid lines
+      threshold = Math.min(200, Math.max(110, threshold - 12));
+
+      // 3. Create binary map (0 = text/dark, 255 = background/light)
+      const binary = new Uint8Array(totalPixels);
+      for (let i = 0; i < totalPixels; i++) {
+        binary[i] = gray[i] < threshold ? 0 : 255;
+      }
+
+      // 4. Suppress thin table grid lines (horizontal and vertical lines >= 18px long)
+      const cleaned = new Uint8Array(binary);
+      const minLineLength = Math.round(20 * scale);
+
+      // Horizontal lines suppression
+      for (let y = 0; y < targetH; y++) {
+        let run = 0;
+        let startX = 0;
+        for (let x = 0; x < targetW; x++) {
+          if (binary[y * targetW + x] === 0) {
+            if (run === 0) startX = x;
+            run++;
+          } else {
+            if (run >= minLineLength) {
+              for (let rx = startX; rx < x; rx++) {
+                // If it's a very thin isolated line (1-2px thick), erase it
+                const up = y > 0 ? binary[(y - 1) * targetW + rx] : 255;
+                const dn = y < targetH - 1 ? binary[(y + 1) * targetW + rx] : 255;
+                if (up === 255 || dn === 255) cleaned[y * targetW + rx] = 255;
+              }
+            }
+            run = 0;
+          }
         }
+      }
 
-        d[i] = Math.min(255, Math.max(0, r));
-        d[i + 1] = Math.min(255, Math.max(0, g));
-        d[i + 2] = Math.min(255, Math.max(0, b));
+      // Vertical lines suppression (prevents Excel cell borders from becoming 1s or 7s)
+      for (let x = 0; x < targetW; x++) {
+        let run = 0;
+        let startY = 0;
+        for (let y = 0; y < targetH; y++) {
+          if (binary[y * targetW + x] === 0) {
+            if (run === 0) startY = y;
+            run++;
+          } else {
+            if (run >= minLineLength) {
+              for (let ry = startY; ry < y; ry++) {
+                const lf = x > 0 ? binary[ry * targetW + (x - 1)] : 255;
+                const rt = x < targetW - 1 ? binary[ry * targetW + (x + 1)] : 255;
+                if (lf === 255 || rt === 255) cleaned[ry * targetW + x] = 255;
+              }
+            }
+            run = 0;
+          }
+        }
+      }
+
+      // Re-write back to canvas
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        const val = cleaned[j];
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
+        d[i + 3] = 255;
       }
 
       ctx.putImageData(imgData, 0, 0);
@@ -734,8 +743,9 @@
 
     /**
      * Precision Number Parser:
-     * Correctly handles 209,229; 209,729; 210,229; 210,729; 245,729 -> Total: 1,085,645.00
-     * Handles OCR misreads where commas on screens appear as dots or spaces.
+     * - Discards isolated artifacts like stray 1s/7s created by grid intersections
+     * - Filters out zero/blank noise
+     * - Respects thousands groups and decimals accurately
      */
     function extractNumbersFromText(ocrText) {
       const extracted = [];
@@ -743,23 +753,22 @@
 
       const isSmartMode = document.getElementById('modeSmartThousands')?.checked ?? true;
 
-      // Clean string
+      // Sanitize common OCR text noise
       let sanitized = ocrText
+        .replace(/[oO]/g, '0') // Common OCR confusion of O with 0 inside numeric tables
         .replace(/[$€£¥]/g, ' ')
-        .replace(/[−—–]/g, '-');
+        .replace(/[−—–_]/g, '-');
 
-      // Split into lines or distinct tokens
       const lines = sanitized.split(/\r?\n/);
 
       lines.forEach(line => {
-        const trimmed = line.trim();
+        let trimmed = line.trim();
         if (!trimmed) return;
 
-        // Tokenize line by whitespace
-        const tokens = trimmed.split(/\s+/);
+        // Split by spaces, tabs, or colons
+        const tokens = trimmed.split(/[\s|/]+/);
 
         tokens.forEach(rawToken => {
-          // Remove wrapping parentheses or brackets: (209,229) -> -209,229
           let token = rawToken.trim();
           let isNegative = false;
 
@@ -771,41 +780,36 @@
             token = token.slice(1).trim();
           }
 
-          // Strip any stray non-digit/punctuation characters
+          // Strip any stray characters outside numbers and separators
           token = token.replace(/[^0-9.,]/g, '');
           if (!/\d/.test(token)) return;
 
           let finalNumber = null;
 
           if (isSmartMode) {
-            // Case 1: Standard thousands with comma or dot followed by exactly 3 digits:
-            // e.g. 209,229 or 209.229 (when OCR turns comma into period off monitor)
+            // Case 1: Standard thousands grouping (e.g. 209,229 or 209.229)
             if (/^\d{1,3}([,.]\d{3})+$/.test(token)) {
-              // Strictly thousands grouping (no decimal part) -> strip both commas and dots
               finalNumber = parseFloat(token.replace(/[,.]/g, ''));
             }
-            // Case 2: Thousands grouping with trailing cents: e.g. 209,229.50 or 209.229,50
+            // Case 2: Thousands with trailing decimal cents (e.g. 209,229.50)
             else if (/^\d{1,3}(,\d{3})+(\.\d{1,2})$/.test(token)) {
               finalNumber = parseFloat(token.replace(/,/g, ''));
-            } else if (/^\d{1,3}(\.\d{3})+(,\d{1,2})$/.test(token)) {
-              finalNumber = parseFloat(token.replace(/\./g, '').replace(',', '.'));
             }
-            // Case 3: Standard decimal number with 1 or 2 decimal digits: e.g. 209.25
+            // Case 3: Standard decimal number (e.g. 100.00 or 12.5)
             else if (/^\d+\.\d{1,2}$/.test(token)) {
               finalNumber = parseFloat(token);
             }
-            // Case 4: Plain integer
+            // Case 4: Plain integer (e.g. 100)
             else if (/^\d+$/.test(token)) {
               finalNumber = parseFloat(token);
             }
-            // Fallback: Default strip commas
+            // Fallback
             else {
               let cleaned = token.replace(/,/g, '');
               let parsed = parseFloat(cleaned);
               if (!isNaN(parsed)) finalNumber = parsed;
             }
           } else {
-            // Strict US standard: Comma is thousands separator, dot is decimal point
             let cleaned = token.replace(/,/g, '');
             let parsed = parseFloat(cleaned);
             if (!isNaN(parsed)) finalNumber = parsed;
@@ -865,27 +869,48 @@
       ocrProgressPercent.textContent = '10%';
       ocrStatusText.innerHTML = `<i class="ph ph-scan text-base animate-spin text-brand-400"></i> Loading image...`;
 
+      state.rawImageSrc = typeof fileOrDataUrl === 'string' ? fileOrDataUrl : null;
+
       const executeRecognition = async (srcUrl) => {
+        state.rawImageSrc = srcUrl;
         imagePreview.src = srcUrl;
         previewContainer.classList.remove('hidden');
 
+        // Destroy previous cropper if existing
+        if (state.cropper) {
+          state.cropper.destroy();
+          state.cropper = null;
+        }
+
         imagePreview.onload = async function () {
           try {
-            ocrStatusText.innerHTML = `<i class="ph ph-magic-wand text-base text-brand-400"></i> Optimizing screen contrast...`;
-            ocrProgressBar.style.width = '25%';
-            ocrProgressPercent.textContent = '25%';
+            // Initialize Cropper for easy user adjustment / column selection
+            state.cropper = new Cropper(imagePreview, {
+              viewMode: 1,
+              autoCropArea: 0.95,
+              responsive: true,
+              restore: false,
+              guides: true,
+              center: false,
+              highlight: false,
+              background: false
+            });
 
-            // Offscreen canvas preprocessing
+            ocrStatusText.innerHTML = `<i class="ph ph-magic-wand text-base text-brand-400"></i> Erasing grid lines & boosting ink...`;
+            ocrProgressBar.style.width = '30%';
+            ocrProgressPercent.textContent = '30%';
+
+            // Preprocess to remove spreadsheet lines
             const processedDataUrl = preprocessImage(imagePreview);
 
-            ocrStatusText.innerHTML = `<i class="ph ph-cpu text-base animate-pulse text-brand-400"></i> Reading numbers...`;
+            ocrStatusText.innerHTML = `<i class="ph ph-cpu text-base animate-pulse text-brand-400"></i> Parsing numbers column...`;
 
-            // Tesseract OCR worker
+            // Tesseract OCR worker with Single Column / Sparse Text PSM
             const worker = await Tesseract.createWorker('eng');
 
-            // Set character set parameter for clean numeric recognition off monitors
             await worker.setParameters({
               tessedit_char_whitelist: '0123456789.,-+()$ \n',
+              tessedit_pageseg_mode: '4', // 4 = PSM.SINGLE_COLUMN (prevents Excel cell grid jumps)
               preserve_interword_spaces: '1'
             });
 
@@ -896,7 +921,7 @@
             ocrProgressBar.style.width = '90%';
             ocrProgressPercent.textContent = '90%';
 
-            // Extract Numbers using updated parser
+            // Extract Numbers using updated line-isolated parser
             const parsedNumbers = extractNumbersFromText(fullText);
 
             await worker.terminate();
@@ -905,16 +930,15 @@
             ocrProgressPercent.textContent = '100%';
             setTimeout(() => {
               ocrStatusCard.classList.add('hidden');
-            }, 450);
+            }, 400);
 
             if (parsedNumbers.length === 0) {
-              showToast('No numbers detected. Adjust angle or contrast slider.', 'ph-warning', true);
+              showToast('No clean numbers found. Try dragging crop box over numbers.', 'ph-warning', true);
             } else {
               state.items = parsedNumbers;
               renderList();
               saveHistoryEntry(parsedNumbers);
 
-              // Confetti burst on successful sum
               if (parsedNumbers.length > 1) {
                 confetti({
                   particleCount: 40,
@@ -923,7 +947,7 @@
                   colors: ['#10b981', '#34d399', '#6ee7b7']
                 });
               }
-              showToast(`Summed ${parsedNumbers.length} numbers successfully!`, 'ph-check-circle');
+              showToast(`Captured ${parsedNumbers.length} numbers successfully!`, 'ph-check-circle');
             }
 
           } catch (err) {
@@ -943,6 +967,16 @@
         reader.onload = (e) => executeRecognition(e.target.result);
         reader.readAsDataURL(fileOrDataUrl);
       }
+    }
+
+    // Re-scan from active Cropper selection
+    async function scanCroppedArea() {
+      if (!state.cropper) return;
+      const croppedCanvas = state.cropper.getCroppedCanvas();
+      if (!croppedCanvas) return;
+
+      const croppedUrl = croppedCanvas.toDataURL('image/png');
+      await processImageForOCR(croppedUrl);
     }
 
     // Live Video Stream Controller
@@ -1132,6 +1166,9 @@
         filterPanel.classList.toggle('hidden');
       });
 
+      // Re-scan Cropped selection button
+      cropAndScanBtn.addEventListener('click', scanCroppedArea);
+
       // Re-calculate directly from Raw Text editor
       const recalcFromRawBtn = document.getElementById('recalcFromRawBtn');
       if (recalcFromRawBtn) {
@@ -1166,8 +1203,12 @@
       // Preview dismiss & hints
       dismissPreview.addEventListener('click', () => {
         previewContainer.classList.add('hidden');
+        if (state.cropper) {
+          state.cropper.destroy();
+          state.cropper = null;
+        }
       });
-      toggleCropHelp.addEventListener('click', () => {
+      toggleCropHelp?.addEventListener('click', () => {
         cropTip.classList.toggle('hidden');
       });
 
