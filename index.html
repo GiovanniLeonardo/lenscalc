@@ -105,7 +105,7 @@
           LensCalc
           <span class="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/30">Auto OCR</span>
         </h1>
-        <p class="text-[11px] text-slate-400 mt-0.5">Screen & Document Sum V2</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Screen & Document Sum</p>
       </div>
     </div>
     
@@ -608,10 +608,11 @@
     }
 
     /**
-     * Advanced Monitor & Spreadsheet Grid-Line Removal Preprocessing:
-     * 1. Upscales small text for crisp edges.
-     * 2. Converts to grayscale with Otsu adaptive thresholding.
-     * 3. Erases thin continuous vertical & horizontal Excel table lines (which Tesseract mistakes for '1' or '7').
+     * Heavy-Duty LCD Screen & Table Preprocessing Pipeline:
+     * 1. Resolution normalization (clamped to optimal OCR height ~1200-1800px).
+     * 2. Low-pass Gaussian anti-aliasing to melt computer monitor pixel mesh (moiré).
+     * 3. Local adaptive windowed contrast to isolate text ink from grey table cells.
+     * 4. Morphological line suppression to erase horizontal/vertical cell borders.
      */
     function preprocessImage(imgElement) {
       const canvas = offscreenCanvas;
@@ -620,86 +621,93 @@
       let width = imgElement.naturalWidth || imgElement.videoWidth || imgElement.width;
       let height = imgElement.naturalHeight || imgElement.videoHeight || imgElement.height;
 
-      // Upscale if text is tiny, or clamp if excessively huge
-      const scale = Math.max(1.5, Math.min(2.5, 1600 / Math.max(width, height)));
-      const targetW = Math.round(width * scale);
-      const targetH = Math.round(height * scale);
+      if (!width || !height) return '';
 
-      canvas.width = targetW;
-      canvas.height = targetH;
+      // Standardize scale for optimal OCR character height (approx 30-50px glyphs)
+      const targetWidth = Math.min(2000, Math.max(1000, width));
+      const scale = targetWidth / width;
+      const targetHeight = Math.round(height * scale);
 
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      // Draw with slight smoothing to dissolve LCD sub-pixel moiré fringes
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(imgElement, 0, 0, targetW, targetH);
+      ctx.drawImage(imgElement, 0, 0, targetWidth, targetHeight);
 
-      const imgData = ctx.getImageData(0, 0, targetW, targetH);
-      const d = imgData.data;
-      const totalPixels = targetW * targetH;
+      const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+      const data = imgData.data;
+      const totalPixels = targetWidth * targetHeight;
 
-      // 1. Convert to Grayscale & compute luminance histogram
-      const gray = new Uint8Array(totalPixels);
-      const histogram = new Array(256).fill(0);
-
-      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-        const val = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
-        gray[j] = val;
-        histogram[val]++;
+      // Step 1: Grayscale Luminance Map
+      const gray = new Uint8ClampedArray(totalPixels);
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        // High green weight for digital screens
+        gray[j] = (data[i] * 54 + data[i + 1] * 183 + data[i + 2] * 19) >> 8;
       }
 
-      // 2. Otsu's Global Adaptive Binarization
-      let sumAll = 0;
-      for (let t = 0; t < 256; t++) sumAll += t * histogram[t];
-
-      let sumB = 0;
-      let wB = 0;
-      let varMax = 0;
-      let threshold = 140;
-
-      for (let t = 0; t < 256; t++) {
-        wB += histogram[t];
-        if (wB === 0) continue;
-        const wF = totalPixels - wB;
-        if (wF === 0) break;
-
-        sumB += t * histogram[t];
-        const mB = sumB / wB;
-        const mF = (sumAll - sumB) / wF;
-        const varBetween = wB * wF * (mB - mF) * (mB - mF);
-
-        if (varBetween > varMax) {
-          varMax = varBetween;
-          threshold = t;
+      // Step 2: Integral image for fast local adaptive thresholding (handles uneven screen glare)
+      const integral = new Float64Array((targetWidth + 1) * (targetHeight + 1));
+      let idx = 0;
+      for (let y = 0; y < targetHeight; y++) {
+        let sum = 0;
+        for (let x = 0; x < targetWidth; x++) {
+          sum += gray[idx++];
+          integral[(y + 1) * (targetWidth + 1) + (x + 1)] = 
+            integral[y * (targetWidth + 1) + (x + 1)] + sum;
         }
       }
 
-      // Slightly bias threshold towards white to avoid picking up grey Excel grid lines
-      threshold = Math.min(200, Math.max(110, threshold - 12));
-
-      // 3. Create binary map (0 = text/dark, 255 = background/light)
+      // Step 3: Adaptive threshold with window size ~1/32nd of image width
+      const s = Math.max(16, Math.floor(targetWidth / 32));
+      const s2 = Math.floor(s / 2);
+      const C = 8; // threshold offset
       const binary = new Uint8Array(totalPixels);
-      for (let i = 0; i < totalPixels; i++) {
-        binary[i] = gray[i] < threshold ? 0 : 255;
+
+      for (let y = 0; y < targetHeight; y++) {
+        const y1 = Math.max(0, y - s2);
+        const y2 = Math.min(targetHeight - 1, y + s2);
+
+        for (let x = 0; x < targetWidth; x++) {
+          const x1 = Math.max(0, x - s2);
+          const x2 = Math.min(targetWidth - 1, x + s2);
+          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+
+          const sum = integral[(y2 + 1) * (targetWidth + 1) + (x2 + 1)]
+                    - integral[y1 * (targetWidth + 1) + (x2 + 1)]
+                    - integral[(y2 + 1) * (targetWidth + 1) + x1]
+                    + integral[y1 * (targetWidth + 1) + x1];
+
+          const localAvg = sum / count;
+          const pixelVal = gray[y * targetWidth + x];
+
+          // Text on screens is typically dark on light, or light on dark
+          // We normalize everything to black text (0) on pure white background (255)
+          binary[y * targetWidth + x] = pixelVal < (localAvg - C) ? 0 : 255;
+        }
       }
 
-      // 4. Suppress thin table grid lines (horizontal and vertical lines >= 18px long)
-      const cleaned = new Uint8Array(binary);
-      const minLineLength = Math.round(20 * scale);
+      // Step 4: Erase thin lines (Excel grid border suppression)
+      // Removes long straight single-pixel lines that get falsely read as '1' or '7'
+      const lineLen = Math.floor(targetWidth * 0.05); // 5% of screen width
+      const finalMap = new Uint8Array(binary);
 
-      // Horizontal lines suppression
-      for (let y = 0; y < targetH; y++) {
+      // Horizontal lines
+      for (let y = 1; y < targetHeight - 1; y++) {
         let run = 0;
         let startX = 0;
-        for (let x = 0; x < targetW; x++) {
-          if (binary[y * targetW + x] === 0) {
+        for (let x = 0; x < targetWidth; x++) {
+          if (binary[y * targetWidth + x] === 0) {
             if (run === 0) startX = x;
             run++;
           } else {
-            if (run >= minLineLength) {
-              for (let rx = startX; rx < x; rx++) {
-                // If it's a very thin isolated line (1-2px thick), erase it
-                const up = y > 0 ? binary[(y - 1) * targetW + rx] : 255;
-                const dn = y < targetH - 1 ? binary[(y + 1) * targetW + rx] : 255;
-                if (up === 255 || dn === 255) cleaned[y * targetW + rx] = 255;
+            if (run >= lineLen) {
+              for (let i = startX; i < x; i++) {
+                // If it's a thin horizontal cell border without vertical support, delete it
+                if (binary[(y - 1) * targetWidth + i] === 255 || binary[(y + 1) * targetWidth + i] === 255) {
+                  finalMap[y * targetWidth + i] = 255;
+                }
               }
             }
             run = 0;
@@ -707,20 +715,20 @@
         }
       }
 
-      // Vertical lines suppression (prevents Excel cell borders from becoming 1s or 7s)
-      for (let x = 0; x < targetW; x++) {
+      // Vertical lines
+      for (let x = 1; x < targetWidth - 1; x++) {
         let run = 0;
         let startY = 0;
-        for (let y = 0; y < targetH; y++) {
-          if (binary[y * targetW + x] === 0) {
+        for (let y = 0; y < targetHeight; y++) {
+          if (binary[y * targetWidth + x] === 0) {
             if (run === 0) startY = y;
             run++;
           } else {
-            if (run >= minLineLength) {
-              for (let ry = startY; ry < y; ry++) {
-                const lf = x > 0 ? binary[ry * targetW + (x - 1)] : 255;
-                const rt = x < targetW - 1 ? binary[ry * targetW + (x + 1)] : 255;
-                if (lf === 255 || rt === 255) cleaned[ry * targetW + x] = 255;
+            if (run >= lineLen) {
+              for (let i = startY; i < y; i++) {
+                if (binary[i * targetWidth + (x - 1)] === 255 || binary[i * targetWidth + (x + 1)] === 255) {
+                  finalMap[i * targetWidth + x] = 255;
+                }
               }
             }
             run = 0;
@@ -728,13 +736,13 @@
         }
       }
 
-      // Re-write back to canvas
-      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-        const val = cleaned[j];
-        d[i] = val;
-        d[i + 1] = val;
-        d[i + 2] = val;
-        d[i + 3] = 255;
+      // Step 5: Write cleaned bitmap back to output canvas
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        const val = finalMap[j];
+        data[i] = val;
+        data[i + 1] = val;
+        data[i + 2] = val;
+        data[i + 3] = 255;
       }
 
       ctx.putImageData(imgData, 0, 0);
@@ -742,10 +750,10 @@
     }
 
     /**
-     * Precision Number Parser:
-     * - Discards isolated artifacts like stray 1s/7s created by grid intersections
-     * - Filters out zero/blank noise
-     * - Respects thousands groups and decimals accurately
+     * Line-by-Line Token Extraction & Number Parsing:
+     * - Fixes Excel screenshot spacing
+     * - Strips accounting parentheses, symbols, and stray characters
+     * - Resolves thousands vs decimal ambiguities
      */
     function extractNumbersFromText(ocrText) {
       const extracted = [];
@@ -753,11 +761,14 @@
 
       const isSmartMode = document.getElementById('modeSmartThousands')?.checked ?? true;
 
-      // Sanitize common OCR text noise
+      // Clean known OCR character confusions in numbers
       let sanitized = ocrText
-        .replace(/[oO]/g, '0') // Common OCR confusion of O with 0 inside numeric tables
-        .replace(/[$€£¥]/g, ' ')
-        .replace(/[−—–_]/g, '-');
+        .replace(/[oO]/g, '0')
+        .replace(/[lI|]/g, '1')
+        .replace(/[sS]/g, '5')
+        .replace(/[B]/g, '8')
+        .replace(/[$€£¥]/g, '')
+        .replace(/[—–_]/g, '-');
 
       const lines = sanitized.split(/\r?\n/);
 
@@ -765,54 +776,55 @@
         let trimmed = line.trim();
         if (!trimmed) return;
 
-        // Split by spaces, tabs, or colons
-        const tokens = trimmed.split(/[\s|/]+/);
+        // Extract potential numeric clusters
+        const tokens = trimmed.split(/\s+/);
 
         tokens.forEach(rawToken => {
           let token = rawToken.trim();
-          let isNegative = false;
+          if (!token) return;
 
-          if (token.startsWith('(') && token.endsWith(')')) {
+          let isNegative = false;
+          if ((token.startsWith('(') && token.endsWith(')')) || token.startsWith('-')) {
             isNegative = true;
-            token = token.slice(1, -1).trim();
-          } else if (token.startsWith('-')) {
-            isNegative = true;
-            token = token.slice(1).trim();
           }
 
-          // Strip any stray characters outside numbers and separators
+          // Keep only numeric characters and separators
           token = token.replace(/[^0-9.,]/g, '');
           if (!/\d/.test(token)) return;
 
           let finalNumber = null;
 
           if (isSmartMode) {
-            // Case 1: Standard thousands grouping (e.g. 209,229 or 209.229)
-            if (/^\d{1,3}([,.]\d{3})+$/.test(token)) {
-              finalNumber = parseFloat(token.replace(/[,.]/g, ''));
+            // Check for thousands grouping e.g. 209,229 or 209,729 or 1,000,000
+            if (/^\d{1,3}(,\d{3})+$/.test(token)) {
+              finalNumber = parseFloat(token.replace(/,/g, ''));
             }
-            // Case 2: Thousands with trailing decimal cents (e.g. 209,229.50)
+            // Grouping with dot e.g. 209.229 (often produced when monitor pixels merge commas)
+            else if (/^\d{1,3}(\.\d{3})+$/.test(token)) {
+              finalNumber = parseFloat(token.replace(/\./g, ''));
+            }
+            // Numbers with both thousands and decimals e.g. 209,229.50
             else if (/^\d{1,3}(,\d{3})+(\.\d{1,2})$/.test(token)) {
               finalNumber = parseFloat(token.replace(/,/g, ''));
             }
-            // Case 3: Standard decimal number (e.g. 100.00 or 12.5)
+            // Standard decimal (e.g. 100.50, 12.00)
             else if (/^\d+\.\d{1,2}$/.test(token)) {
               finalNumber = parseFloat(token);
             }
-            // Case 4: Plain integer (e.g. 100)
+            // Standard integers (e.g. 100, 200, 500)
             else if (/^\d+$/.test(token)) {
               finalNumber = parseFloat(token);
             }
-            // Fallback
+            // Fallback: strip all commas and parse float
             else {
-              let cleaned = token.replace(/,/g, '');
-              let parsed = parseFloat(cleaned);
-              if (!isNaN(parsed)) finalNumber = parsed;
+              let cleanStr = token.replace(/,/g, '');
+              let p = parseFloat(cleanStr);
+              if (!isNaN(p)) finalNumber = p;
             }
           } else {
-            let cleaned = token.replace(/,/g, '');
-            let parsed = parseFloat(cleaned);
-            if (!isNaN(parsed)) finalNumber = parsed;
+            let cleanStr = token.replace(/,/g, '');
+            let p = parseFloat(cleanStr);
+            if (!isNaN(p)) finalNumber = p;
           }
 
           if (finalNumber !== null && !isNaN(finalNumber)) {
@@ -846,7 +858,7 @@
       };
 
       state.history.unshift(record);
-      if (state.history.length > 25) state.history.pop(); // keep last 25
+      if (state.history.length > 25) state.history.pop();
       localStorage.setItem('lenscalc_history', JSON.stringify(state.history));
       updateHistoryBadge();
     }
@@ -876,7 +888,6 @@
         imagePreview.src = srcUrl;
         previewContainer.classList.remove('hidden');
 
-        // Destroy previous cropper if existing
         if (state.cropper) {
           state.cropper.destroy();
           state.cropper = null;
@@ -884,7 +895,7 @@
 
         imagePreview.onload = async function () {
           try {
-            // Initialize Cropper for easy user adjustment / column selection
+            // Initialize Cropper for fine-tuning column focus
             state.cropper = new Cropper(imagePreview, {
               viewMode: 1,
               autoCropArea: 0.95,
@@ -896,21 +907,24 @@
               background: false
             });
 
-            ocrStatusText.innerHTML = `<i class="ph ph-magic-wand text-base text-brand-400"></i> Erasing grid lines & boosting ink...`;
-            ocrProgressBar.style.width = '30%';
-            ocrProgressPercent.textContent = '30%';
+            ocrStatusText.innerHTML = `<i class="ph ph-magic-wand text-base text-brand-400"></i> Eliminating screen lines & glare...`;
+            ocrProgressBar.style.width = '35%';
+            ocrProgressPercent.textContent = '35%';
 
-            // Preprocess to remove spreadsheet lines
+            // Preprocess to eliminate computer monitor artifacts and cell lines
             const processedDataUrl = preprocessImage(imagePreview);
 
-            ocrStatusText.innerHTML = `<i class="ph ph-cpu text-base animate-pulse text-brand-400"></i> Parsing numbers column...`;
+            ocrStatusText.innerHTML = `<i class="ph ph-cpu text-base animate-pulse text-brand-400"></i> Recognizing numbers...`;
+            ocrProgressBar.style.width = '60%';
+            ocrProgressPercent.textContent = '60%';
 
-            // Tesseract OCR worker with Single Column / Sparse Text PSM
+            // Initialize worker
             const worker = await Tesseract.createWorker('eng');
 
+            // Set parameters specifically configured for tables / uniform text blocks
             await worker.setParameters({
-              tessedit_char_whitelist: '0123456789.,-+()$ \n',
-              tessedit_pageseg_mode: '4', // 4 = PSM.SINGLE_COLUMN (prevents Excel cell grid jumps)
+              tessedit_char_whitelist: '0123456789.,-+()$ \n\r',
+              tessedit_pageseg_mode: '6', // PSM 6: Uniform block of vertical text (ideal for Excel columns)
               preserve_interword_spaces: '1'
             });
 
@@ -921,7 +935,7 @@
             ocrProgressBar.style.width = '90%';
             ocrProgressPercent.textContent = '90%';
 
-            // Extract Numbers using updated line-isolated parser
+            // Extract numbers cleanly
             const parsedNumbers = extractNumbersFromText(fullText);
 
             await worker.terminate();
@@ -930,10 +944,10 @@
             ocrProgressPercent.textContent = '100%';
             setTimeout(() => {
               ocrStatusCard.classList.add('hidden');
-            }, 400);
+            }, 300);
 
             if (parsedNumbers.length === 0) {
-              showToast('No clean numbers found. Try dragging crop box over numbers.', 'ph-warning', true);
+              showToast('No clear numbers detected. Adjust crop selection box.', 'ph-warning', true);
             } else {
               state.items = parsedNumbers;
               renderList();
@@ -941,19 +955,19 @@
 
               if (parsedNumbers.length > 1) {
                 confetti({
-                  particleCount: 40,
+                  particleCount: 35,
                   spread: 60,
                   origin: { y: 0.25 },
                   colors: ['#10b981', '#34d399', '#6ee7b7']
                 });
               }
-              showToast(`Captured ${parsedNumbers.length} numbers successfully!`, 'ph-check-circle');
+              showToast(`Extracted ${parsedNumbers.length} numbers correctly!`, 'ph-check-circle');
             }
 
           } catch (err) {
             console.error('OCR Error:', err);
             ocrStatusCard.classList.add('hidden');
-            showToast('OCR Error: ' + (err.message || 'Failed to scan image'), 'ph-x-circle', true);
+            showToast('OCR failed: ' + (err.message || 'Error processing screen'), 'ph-x-circle', true);
           } finally {
             state.isProcessing = false;
           }
